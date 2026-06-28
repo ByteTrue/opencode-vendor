@@ -17,9 +17,21 @@ This follows the `pi-vendor` feature flow, but writes OpenCode's provider schema
 
 ## Install
 
-### npm package
+### From GitHub, without npm publish
 
 Add the plugin to your OpenCode TUI config:
+
+```json
+{
+  "plugin": ["github:ByteTrue/opencode-vendor"]
+}
+```
+
+OpenCode installs npm-style plugin specs with Bun, so this uses the GitHub repo directly.
+
+### From npm package
+
+If this package is published to npm later, use:
 
 ```json
 {
@@ -27,7 +39,7 @@ Add the plugin to your OpenCode TUI config:
 }
 ```
 
-### Without publishing to npm
+### Local clone fallback
 
 Clone the repo somewhere stable and install its dependencies:
 
