@@ -1,5 +1,6 @@
 /** @jsxImportSource @opentui/solid */
-import type { TuiDialogSelectOption, TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
+import type { KeyEvent, TuiDialogSelectOption, TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
+import { createSignal } from "solid-js"
 
 import {
   createNewProviderDraft,
@@ -8,6 +9,7 @@ import {
   providerLabel,
   providerModels,
   readOpencodeConfig,
+  replaceModelInMap,
   removeModel,
   resolveProviderUrl,
   type OpencodeConfig,
@@ -18,7 +20,17 @@ import {
   upsertProvider,
   writeOpencodeConfig,
 } from "../shared/config"
-import { findOfficialMatches, formatOfficialCandidate, type OfficialMatch } from "../shared/catalog"
+import {
+  formatOfficialCandidate,
+  groupOfficialModelsById,
+  listAllOfficialModels,
+  loadOfficialCatalog,
+  type OfficialMatch,
+  type OfficialModelEntry,
+} from "../shared/catalog"
+import { enrichModelId } from "../shared/enrich"
+import { fuzzyFilter } from "../shared/fuzzy"
+import { fetchOpenAIModelIds } from "../shared/openai-models"
 
 const COMMAND_TITLE = "Vendor: Manage OpenCode providers"
 const COMMAND_VALUE = "vendor.manage"
@@ -34,6 +46,23 @@ function prettyJson(value: unknown): string {
 
 function truncateForDialog(value: string, max = 12000): string {
   return value.length > max ? `${value.slice(0, max)}\n\n…truncated…` : value
+}
+
+function matchFromEntry(entry: OfficialModelEntry): OfficialMatch {
+  return {
+    configReadyModel: entry.configReadyModel,
+    model: entry.model,
+    provider: entry.provider,
+    score: 1000,
+  }
+}
+
+function parseModelJson(value: string): ProviderModelConfig {
+  const parsed = JSON.parse(value)
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || typeof (parsed as { id?: unknown }).id !== "string") {
+    throw new Error("expected an object with a string id")
+  }
+  return parsed as ProviderModelConfig
 }
 
 function providerApiKey(config: ProviderConfig): string {
@@ -124,6 +153,56 @@ async function prompt(api: TuiPluginApi, title: string, placeholder?: string, va
   })
 }
 
+async function editText(api: TuiPluginApi, title: string, value: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    let settled = false
+
+    const Editor = () => {
+      const [text, setText] = createSignal(value)
+      const finish = (next: string | null) => {
+        if (settled) return
+        settled = true
+        api.ui.dialog.clear()
+        resolve(next)
+      }
+      const onKeyDown = (event: KeyEvent) => {
+        if (event.ctrl && event.name.toLowerCase() === "s") {
+          event.preventDefault()
+          finish(text())
+        }
+        if (event.name === "escape") {
+          event.preventDefault()
+          finish(null)
+        }
+      }
+
+      return (
+        <api.ui.Dialog size="xlarge" onClose={() => finish(null)}>
+          <box flexDirection="column" gap={1} padding={1}>
+            <text>{title}</text>
+            <textarea
+              focused
+              height={24}
+              initialValue={value}
+              wrapMode="none"
+              onContentChange={setText}
+              onKeyDown={onKeyDown}
+            />
+            <text>Ctrl+S saves, Esc cancels.</text>
+          </box>
+        </api.ui.Dialog>
+      )
+    }
+
+    api.ui.dialog.replace(() => <Editor />, () => {
+      if (!settled) {
+        settled = true
+        resolve(null)
+      }
+    })
+  })
+}
+
 async function select<Value>(
   api: TuiPluginApi,
   title: string,
@@ -162,46 +241,109 @@ async function promptHeaders(api: TuiPluginApi, current: Record<string, string>)
   }
 }
 
-async function chooseOfficialMatch(api: TuiPluginApi, query: string): Promise<OfficialMatch | null> {
-  let matches = await findOfficialMatches(query, { exact: true, limit: 20 })
-  if (matches.length === 0) {
-    matches = await findOfficialMatches(query, { exact: false, limit: 20 })
-  }
-  if (matches.length === 0) {
-    await alert(api, "No official match", `No official model matched \"${query}\".`)
-    return null
-  }
-
-  const choice = await select(api, `Official model: ${query}`, matches.map((match) => ({
-    title: formatOfficialCandidate(match),
-    value: match,
-    description: match.provider.api,
+async function chooseOfficialCandidate(api: TuiPluginApi, modelId: string, candidates: OfficialMatch[]): Promise<OfficialMatch | null> {
+  return select(api, `Choose provider for ${modelId}`, candidates.map((candidate) => ({
+    title: formatOfficialCandidate(candidate),
+    value: candidate,
+    description: candidate.provider.api,
   })))
-
-  return choice
 }
 
-async function addOfficialModel(api: TuiPluginApi, draft: ProviderDraft): Promise<void> {
-  const query = await prompt(api, "Search official model", "Try qwen3.7-plus or alibaba/qwen3.7-plus")
-  if (!query?.trim()) return
-
+async function addEnrichedModel(api: TuiPluginApi, draft: ProviderDraft, modelId: string): Promise<boolean> {
+  let outcome
   try {
-    const match = await chooseOfficialMatch(api, query.trim())
-    if (!match) return
-    draft.config.models = upsertModelMap(providerModels(draft.config), match.configReadyModel as ProviderModelConfig)
-    toast(api, `Added ${match.model.id} from ${match.provider.id}`, "success")
+    outcome = await enrichModelId(modelId)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    await alert(api, "Catalog lookup failed", message)
+    toast(api, `Official catalog unavailable: ${message}`, "warning")
+    outcome = await enrichModelId(modelId, { catalog: null })
   }
+
+  if (outcome.kind === "official-ambiguous") {
+    const chosen = await chooseOfficialCandidate(api, modelId, outcome.candidates)
+    if (!chosen) return false
+    draft.config.models = upsertModelMap(providerModels(draft.config), chosen.configReadyModel as ProviderModelConfig)
+    toast(api, `Added ${chosen.model.id} from ${chosen.provider.id}`, "success")
+    return true
+  }
+
+  let model = outcome.model
+  if (outcome.source === "default") {
+    const edited = await editText(api, `Review model ${modelId} JSON`, prettyJson(model))
+    if (edited == null) return false
+    try {
+      model = parseModelJson(edited)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast(api, `Invalid model JSON: ${message}`, "error")
+      return false
+    }
+  }
+
+  draft.config.models = upsertModelMap(providerModels(draft.config), model)
+  toast(api, `Added ${model.id} from ${outcome.source}`, outcome.warning ? "warning" : "success")
+  return true
 }
 
-async function addManualModel(api: TuiPluginApi, draft: ProviderDraft): Promise<void> {
-  const modelId = await prompt(api, "Custom model id", "Enter a model id, e.g. my-model")
-  if (!modelId?.trim()) return
-  const id = modelId.trim()
-  draft.config.models = upsertModelMap(providerModels(draft.config), { id, name: id })
-  toast(api, `Added ${id}`, "success")
+async function addModel(api: TuiPluginApi, draft: ProviderDraft): Promise<void> {
+  let allModels: OfficialModelEntry[] = []
+  try {
+    allModels = listAllOfficialModels(await loadOfficialCatalog())
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    toast(api, `Official catalog unavailable: ${message}`, "warning")
+  }
+
+  for (;;) {
+    const query = await prompt(api, "Search models", "Type to fuzzy-search official model ids, or leave blank to list all")
+    if (query == null) return
+
+    const groups = groupOfficialModelsById(fuzzyFilter(allModels, query, (entry) => entry.modelId))
+    if (groups.length === 0) {
+      const choice = await select(api, "No matching model ids", [
+        { title: "Enter custom model id...", value: "custom" },
+        { title: "Search again", value: "again" },
+        { title: "Cancel", value: "cancel" },
+      ])
+      if (!choice || choice === "again") continue
+      if (choice === "cancel") return
+      const customId = await prompt(api, "Custom model id", "Enter a model id, e.g. my-custom-model")
+      if (customId?.trim()) await addEnrichedModel(api, draft, customId.trim())
+      return
+    }
+
+    const choice = await select(api, query.trim() ? `Found ${groups.length} model id(s)` : `Official model ids (${groups.length})`, [
+      ...groups.map((group) => ({
+        title: group.modelId,
+        value: group.modelId,
+        description: `${group.entries.length} provider${group.entries.length === 1 ? "" : "s"}`,
+      })),
+      { title: "Enter custom model id...", value: "__custom__" },
+      { title: "Search again", value: "__again__" },
+      { title: "Cancel", value: "__cancel__" },
+    ])
+
+    if (!choice || choice === "__again__") continue
+    if (choice === "__cancel__") return
+    if (choice === "__custom__") {
+      const customId = await prompt(api, "Custom model id", "Enter a model id, e.g. my-custom-model")
+      if (customId?.trim()) await addEnrichedModel(api, draft, customId.trim())
+      return
+    }
+
+    const group = groups.find((entry) => entry.modelId === choice)
+    if (!group) continue
+    const selectedEntry = await select(api, `Choose provider for ${group.modelId}`, group.entries.map((entry) => ({
+      title: formatOfficialCandidate(matchFromEntry(entry)),
+      value: entry,
+      description: entry.provider.api,
+    })))
+    if (!selectedEntry) continue
+
+    draft.config.models = upsertModelMap(providerModels(draft.config), selectedEntry.configReadyModel as ProviderModelConfig)
+    toast(api, `Added ${selectedEntry.model.id} from ${selectedEntry.provider.id}`, "success")
+    return
+  }
 }
 
 async function removeExistingModel(api: TuiPluginApi, draft: ProviderDraft): Promise<void> {
@@ -226,27 +368,101 @@ async function previewModels(api: TuiPluginApi, draft: ProviderDraft): Promise<v
   await alert(api, "Provider models", prettyJson(models))
 }
 
+async function editExistingModel(api: TuiPluginApi, draft: ProviderDraft): Promise<void> {
+  const models = sortedModelList(draft.config)
+  if (models.length === 0) {
+    toast(api, "No models to edit", "info")
+    return
+  }
+
+  const current = await select(api, "Replace/edit model JSON", models.map((model) => ({ title: modelLabel(model), value: model })))
+  if (!current) return
+
+  const edited = await editText(api, `Edit model ${current.id} JSON`, prettyJson(current))
+  if (edited == null) return
+
+  try {
+    const next = parseModelJson(edited)
+    draft.config.models = replaceModelInMap(providerModels(draft.config), current.id, next)
+    toast(api, `Updated model ${next.id}`, "success")
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    toast(api, `Invalid model JSON: ${message}`, "error")
+  }
+}
+
+async function importModelsFromEndpoint(api: TuiPluginApi, draft: ProviderDraft): Promise<void> {
+  const baseURL = providerBaseURL(draft.config)
+  const apiKey = providerApiKey(draft.config)
+  if (!baseURL) {
+    await alert(api, "Missing base URL", "Set options.baseURL before importing from /models.")
+    return
+  }
+  if (!apiKey) {
+    await alert(api, "Missing API key", "Set options.apiKey before importing from /models.")
+    return
+  }
+
+  let ids: string[]
+  try {
+    ids = await fetchOpenAIModelIds({
+      baseURL,
+      apiKey,
+      headers: providerHeaders(draft.config),
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    await alert(api, "Could not import from /models", message)
+    return
+  }
+
+  if (ids.length === 0) {
+    toast(api, "/models returned no model ids", "warning")
+    return
+  }
+
+  let remaining = [...ids]
+  for (;;) {
+    const selected = await select(api, `Import model from /models (${remaining.length} left)`, [
+      ...remaining.map((id) => ({ title: id, value: id })),
+      { title: "Done", value: "__done__" },
+    ])
+    if (!selected || selected === "__done__") return
+
+    if (!(await addEnrichedModel(api, draft, selected))) continue
+
+    remaining = remaining.filter((id) => id !== selected)
+    if (remaining.length === 0) return
+  }
+}
+
 async function manageModels(api: TuiPluginApi, draft: ProviderDraft): Promise<void> {
   for (;;) {
     const action = await select(api, `Manage models (${Object.keys(providerModels(draft.config)).length})`, [
-      { title: "Add official model", value: "official" },
-      { title: "Add custom model id", value: "manual" },
+      { title: "Add model", value: "add" },
       { title: "Remove model", value: "remove" },
+      { title: "Replace/edit model JSON", value: "replace" },
       { title: "Preview models JSON", value: "preview" },
       { title: "Back", value: "back" },
     ])
 
     if (!action || action === "back") return
-    if (action === "official") {
-      await addOfficialModel(api, draft)
-      continue
-    }
-    if (action === "manual") {
-      await addManualModel(api, draft)
+    if (action === "add") {
+      const addAction = await select(api, "Add model", [
+        { title: "Search official/custom model id", value: "manual" },
+        { title: "Import from /models endpoint", value: "import" },
+        { title: "Back", value: "back" },
+      ])
+      if (addAction === "manual") await addModel(api, draft)
+      if (addAction === "import") await importModelsFromEndpoint(api, draft)
       continue
     }
     if (action === "remove") {
       await removeExistingModel(api, draft)
+      continue
+    }
+    if (action === "replace") {
+      await editExistingModel(api, draft)
       continue
     }
     if (action === "preview") {

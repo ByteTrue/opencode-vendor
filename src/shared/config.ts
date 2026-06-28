@@ -139,6 +139,17 @@ export function upsertModelMap(models: Record<string, ProviderModelConfig>, mode
   }
 }
 
+export function replaceModelInMap(
+  models: Record<string, ProviderModelConfig>,
+  oldModelId: string,
+  model: ProviderModelConfig,
+): Record<string, ProviderModelConfig> {
+  const next = { ...models }
+  delete next[oldModelId]
+  next[model.id] = cloneJson(model)
+  return next
+}
+
 export function removeModel(models: Record<string, ProviderModelConfig>, modelId: string): Record<string, ProviderModelConfig> {
   const next = { ...models }
   delete next[modelId]

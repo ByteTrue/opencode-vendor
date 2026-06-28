@@ -26,6 +26,18 @@ export type OfficialMatch = {
   score: number
 }
 
+export type OfficialModelEntry = {
+  provider: OfficialMatch["provider"]
+  modelId: string
+  model: CatalogModel
+  configReadyModel: Record<string, unknown>
+}
+
+export type OfficialModelGroup = {
+  modelId: string
+  entries: OfficialModelEntry[]
+}
+
 const DEFAULT_CATALOG_URL = "https://models.dev/api.json"
 
 let cachedCatalogUrl = ""
@@ -179,6 +191,71 @@ export function makeConfigReadyModel(model: CatalogModel): Record<string, unknow
   if (variants) next.variants = variants
 
   return next
+}
+
+function officialEntryToMatch(entry: OfficialModelEntry, score = 1000): OfficialMatch {
+  return {
+    configReadyModel: JSON.parse(JSON.stringify(entry.configReadyModel)) as Record<string, unknown>,
+    model: JSON.parse(JSON.stringify(entry.model)) as CatalogModel,
+    provider: { ...entry.provider },
+    score,
+  }
+}
+
+export function listAllOfficialModels(catalog: Record<string, CatalogProvider> | null | undefined): OfficialModelEntry[] {
+  if (!catalog) return []
+
+  const entries: OfficialModelEntry[] = []
+  for (const [providerId, provider] of Object.entries(catalog)) {
+    if (!provider || typeof provider !== "object") continue
+    const models = provider.models
+    if (!models || typeof models !== "object") continue
+
+    for (const [modelId, model] of Object.entries(models)) {
+      if (!model || typeof model !== "object") continue
+      const hydratedModel: CatalogModel = { ...(model as CatalogModel), id: (model as CatalogModel).id ?? modelId }
+      const hydratedProvider: CatalogProvider = { ...provider, id: provider.id ?? providerId }
+      entries.push({
+        provider: {
+          id: hydratedProvider.id,
+          name: hydratedProvider.name,
+          npm: hydratedProvider.npm,
+          api: hydratedProvider.api,
+          doc: hydratedProvider.doc,
+        },
+        modelId: hydratedModel.id,
+        model: hydratedModel,
+        configReadyModel: makeConfigReadyModel(hydratedModel),
+      })
+    }
+  }
+  return entries
+}
+
+export function groupOfficialModelsById(entries: OfficialModelEntry[]): OfficialModelGroup[] {
+  const groups: OfficialModelGroup[] = []
+  const byId = new Map<string, OfficialModelGroup>()
+
+  for (const entry of entries) {
+    let group = byId.get(entry.modelId)
+    if (!group) {
+      group = { modelId: entry.modelId, entries: [] }
+      byId.set(entry.modelId, group)
+      groups.push(group)
+    }
+    group.entries.push(entry)
+  }
+
+  return groups
+}
+
+export function collectOfficialCandidates(
+  catalog: Record<string, CatalogProvider> | null | undefined,
+  modelId: string,
+): OfficialMatch[] {
+  return listAllOfficialModels(catalog)
+    .filter((entry) => entry.modelId === modelId)
+    .map((entry) => officialEntryToMatch(entry))
 }
 
 export function formatOfficialCandidate(match: OfficialMatch): string {

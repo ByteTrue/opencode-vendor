@@ -10,4 +10,10 @@ const plugin: PluginModule = {
 }
 
 export { server }
+export {
+  buildOpenAIModelsUrl,
+  fetchOpenAIModelIds,
+  parseOpenAIModelsResponse,
+  resolveApiKeyValue,
+} from "./shared/openai-models"
 export default plugin
