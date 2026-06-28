@@ -1,0 +1,50 @@
+{
+  "name": "@bytetrue/opencode-vendor",
+  "version": "0.1.0",
+  "description": "OpenCode TUI plugin: manage custom providers in ~/.config/opencode/opencode.jsonc.",
+  "type": "module",
+  "license": "MIT",
+  "author": "byte",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "provider",
+    "vendor",
+    "models.dev",
+    "llm"
+  ],
+  "main": "./src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    },
+    "./tui": {
+      "import": "./src/tui/index.tsx",
+      "types": "./src/tui/index.tsx"
+    }
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "oc-plugin": [
+    "tui"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --import tsx test/**/*.test.ts"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.15.6",
+    "@opentui/core": "^0.4.2",
+    "@opentui/keymap": "^0.4.2",
+    "@opentui/solid": "^0.4.2",
+    "solid-js": "^1.9.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.8.2"
+  }
+}
