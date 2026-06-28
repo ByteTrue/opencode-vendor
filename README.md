@@ -17,6 +17,8 @@ This follows the `pi-vendor` feature flow, but writes OpenCode's provider schema
 
 ## Install
 
+### npm package
+
 Add the plugin to your OpenCode TUI config:
 
 ```json
@@ -24,6 +26,26 @@ Add the plugin to your OpenCode TUI config:
   "plugin": ["@bytetrue/opencode-vendor"]
 }
 ```
+
+### Without publishing to npm
+
+Clone the repo somewhere stable and install its dependencies:
+
+```sh
+git clone https://github.com/ByteTrue/opencode-vendor ~/.local/share/opencode/opencode-vendor
+cd ~/.local/share/opencode/opencode-vendor
+npm install
+```
+
+Then point OpenCode at the local TUI plugin file:
+
+```json
+{
+  "plugin": ["file:///Users/you/.local/share/opencode/opencode-vendor/src/tui/index.tsx"]
+}
+```
+
+Use your real absolute path. A relative path also works if it is relative to the config file.
 
 Typical location:
 
