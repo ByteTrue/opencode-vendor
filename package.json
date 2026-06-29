@@ -13,12 +13,7 @@
     "models.dev",
     "llm"
   ],
-  "main": "./src/index.ts",
   "exports": {
-    ".": {
-      "import": "./src/index.ts",
-      "types": "./src/index.ts"
-    },
     "./tui": {
       "import": "./src/tui/index.tsx",
       "types": "./src/tui/index.tsx"
@@ -27,9 +22,6 @@
   "files": [
     "src",
     "README.md"
-  ],
-  "oc-plugin": [
-    "tui"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",

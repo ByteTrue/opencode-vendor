@@ -19,7 +19,7 @@ This follows the `pi-vendor` feature flow, but writes OpenCode's provider schema
 
 ### From GitHub, without npm publish
 
-Add the plugin to your OpenCode TUI config:
+Add the plugin to `~/.config/opencode/tui.jsonc`:
 
 ```json
 {
@@ -27,11 +27,17 @@ Add the plugin to your OpenCode TUI config:
 }
 ```
 
-OpenCode installs npm-style plugin specs with Bun, so this uses the GitHub repo directly.
+OpenCode installs npm-style plugin specs with Bun, so this uses the GitHub repo directly. Do not put this in `opencode.jsonc`; that file is where this plugin saves providers.
+
+Or let OpenCode write the correct config file for you:
+
+```sh
+opencode plugin github:ByteTrue/opencode-vendor --global
+```
 
 ### From npm package
 
-If this package is published to npm later, use:
+If this package is published to npm later, put this in `~/.config/opencode/tui.jsonc`:
 
 ```json
 {
@@ -49,7 +55,7 @@ cd ~/.local/share/opencode/opencode-vendor
 npm install
 ```
 
-Then point OpenCode at the local TUI plugin file:
+Then point `~/.config/opencode/tui.jsonc` at the local TUI plugin file:
 
 ```json
 {
@@ -58,10 +64,6 @@ Then point OpenCode at the local TUI plugin file:
 ```
 
 Use your real absolute path. A relative path also works if it is relative to the config file.
-
-Typical location:
-
-- `~/.config/opencode/tui.jsonc`
 
 ## Use
 
