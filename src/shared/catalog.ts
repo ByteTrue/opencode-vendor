@@ -172,7 +172,6 @@ export function makeConfigReadyModel(model: CatalogModel, provider?: CatalogProv
     "release_date",
     "attachment",
     "reasoning",
-    "reasoning_options",
     "temperature",
     "tool_call",
     "interleaved",
