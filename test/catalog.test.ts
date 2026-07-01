@@ -46,6 +46,7 @@ test("collectOfficialCandidates returns confirmation candidates for exact ids", 
   assert.deepEqual(candidates[0]?.configReadyModel, {
     id: "gpt-4o",
     name: "GPT-4o",
+    provider: { npm: "@ai-sdk/openai" },
     limit: { context: 128000, output: 16384 },
   })
 })

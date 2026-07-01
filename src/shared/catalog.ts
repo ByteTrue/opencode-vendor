@@ -163,7 +163,7 @@ function makeConfigReadyVariants(model: any): Record<string, unknown> | undefine
   return Object.keys(variants).length > 0 ? variants : undefined
 }
 
-export function makeConfigReadyModel(model: CatalogModel): Record<string, unknown> {
+export function makeConfigReadyModel(model: CatalogModel, provider?: CatalogProvider): Record<string, unknown> {
   const next: Record<string, unknown> = {}
   for (const key of [
     "id",
@@ -179,10 +179,16 @@ export function makeConfigReadyModel(model: CatalogModel): Record<string, unknow
     "limit",
     "modalities",
     "status",
-    "provider",
   ]) {
     if (model[key] !== undefined) next[key] = model[key]
   }
+
+  const providerConfig: Record<string, unknown> = {}
+  if (provider?.npm !== undefined) providerConfig.npm = provider.npm
+  if (model.provider && typeof model.provider === "object" && !Array.isArray(model.provider)) {
+    Object.assign(providerConfig, model.provider)
+  }
+  if (Object.keys(providerConfig).length > 0) next.provider = providerConfig
 
   const cost = makeConfigReadyCost((model as any).cost)
   if (cost) next.cost = cost
@@ -225,7 +231,7 @@ export function listAllOfficialModels(catalog: Record<string, CatalogProvider> |
         },
         modelId: hydratedModel.id,
         model: hydratedModel,
-        configReadyModel: makeConfigReadyModel(hydratedModel),
+        configReadyModel: makeConfigReadyModel(hydratedModel, hydratedProvider),
       })
     }
   }
@@ -290,7 +296,7 @@ export async function findOfficialMatches(
       const score = getScore(hydratedProvider, hydratedModel, query, exact)
       if (score < 0) continue
       matches.push({
-        configReadyModel: makeConfigReadyModel(hydratedModel),
+        configReadyModel: makeConfigReadyModel(hydratedModel, hydratedProvider),
         model: hydratedModel,
         provider: {
           id: hydratedProvider.id,
