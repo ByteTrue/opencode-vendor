@@ -178,6 +178,7 @@ export function makeConfigReadyModel(model: CatalogModel, provider?: CatalogProv
     "limit",
     "modalities",
     "status",
+    "experimental",
   ]) {
     if (model[key] !== undefined) next[key] = model[key]
   }
