@@ -6,6 +6,7 @@ import {
   formatOfficialCandidate,
   groupOfficialModelsById,
   listAllOfficialModels,
+  makeConfigReadyModel,
   type CatalogProvider,
 } from "../src/shared/catalog"
 
@@ -49,4 +50,14 @@ test("collectOfficialCandidates returns confirmation candidates for exact ids", 
     provider: { npm: "@ai-sdk/openai" },
     limit: { context: 128000, output: 16384 },
   })
+})
+
+test("makeConfigReadyModel overrides reasoning to false for Gemini image models", () => {
+  // imported at the top
+  const result = makeConfigReadyModel({
+    id: "gemini-3-pro-image-preview",
+    name: "Gemini 3 Pro Image",
+    reasoning: true
+  })
+  assert.equal(result.reasoning, false)
 })

@@ -182,6 +182,10 @@ export function makeConfigReadyModel(model: CatalogModel, provider?: CatalogProv
     if (model[key] !== undefined) next[key] = model[key]
   }
 
+  if (next.id && typeof next.id === "string" && next.id.includes("gemini") && next.id.includes("-image")) {
+    next.reasoning = false
+  }
+
   const providerConfig: Record<string, unknown> = {}
   if (provider?.npm !== undefined) providerConfig.npm = provider.npm
   if (model.provider && typeof model.provider === "object" && !Array.isArray(model.provider)) {
